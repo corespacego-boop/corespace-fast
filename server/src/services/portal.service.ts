@@ -22,7 +22,7 @@ export class PortalService implements OnModuleInit {
   constructor(private readonly parsersService: ParsersService) {}
 
   onModuleInit() {
-    // Pre-fetch captchas in background 2s after server startup
+    // Background refill 2s after server startup
     setTimeout(() => {
       this.refillCaptchaBuffer().catch(() => {});
     }, 2000);
@@ -36,7 +36,9 @@ export class PortalService implements OnModuleInit {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Cookie': cookies.join('; '),
       },
-      timeout: 8000,
+      timeout: 10000,
+      maxRedirects: 0, // Manual redirect handling to preserve JSESSIONID cookies!
+      validateStatus: (status) => status >= 200 && status < 400,
     });
   }
 
@@ -55,13 +57,13 @@ export class PortalService implements OnModuleInit {
         }
       }
     } catch (e) {
-      // Background refill warning
+      // Ignore background fetch errors
     } finally {
       this.isRefilling = false;
     }
   }
 
-  // Internal Raw Fetching
+  // Fetch Raw Captcha from SRM Portal
   private async fetchRawCaptcha(): Promise<PrefetchedCaptcha | null> {
     const sid = Math.random().toString(36).substring(2, 10);
     try {
@@ -70,7 +72,7 @@ export class PortalService implements OnModuleInit {
       const setCookies = pageRes.headers['set-cookie'] || [];
       const cookies = setCookies.map((c) => c.split(';')[0]);
 
-      const html = pageRes.data.toString();
+      const html = String(pageRes.data || '');
       const $ = cheerio.load(html);
       let captchaUrl = $('#secure_captcha').attr('data-src') || $('#captchaImg').attr('src') || $('img[alt="Captcha"]').attr('data-src') || $('img[alt="Captcha"]').attr('src');
 
@@ -95,25 +97,21 @@ export class PortalService implements OnModuleInit {
         createdAt: Date.now(),
       };
     } catch (err) {
-      console.error('[CAPTCHA FETCH ERROR]:', err?.message || err);
       return null;
     }
   }
 
   // INSTANT Captcha Delivery (pumps from memory buffer)
   async loadCaptcha(sessionId?: string) {
-    // Evict old captchas (> 10 mins)
     const now = Date.now();
     this.captchaBuffer = this.captchaBuffer.filter((c) => now - c.createdAt < 600000);
 
     let captchaItem: PrefetchedCaptcha | undefined = this.captchaBuffer.shift();
 
     if (!captchaItem) {
-      // Fallback: load directly if buffer was empty
       captchaItem = await this.fetchRawCaptcha();
     }
 
-    // Trigger background refill asynchronously (non-blocking)
     setImmediate(() => this.refillCaptchaBuffer());
 
     if (!captchaItem) {
@@ -130,7 +128,7 @@ export class PortalService implements OnModuleInit {
     };
   }
 
-  // Authenticate Portal User
+  // Authenticate Portal User & Collect Cookies
   async login(netid: string, password: string, captcha: string, cdigest: string) {
     let sess = this.sessions.get(cdigest);
     if (!sess) {
@@ -153,7 +151,16 @@ export class PortalService implements OnModuleInit {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
 
-      const bodyText = res.data.toString().toLowerCase();
+      const setCookies = res.headers['set-cookie'] || [];
+      const updatedCookies = [...sess.cookies];
+      setCookies.forEach((c) => {
+        const cookieVal = c.split(';')[0];
+        if (!updatedCookies.includes(cookieVal)) {
+          updatedCookies.push(cookieVal);
+        }
+      });
+
+      const bodyText = String(res.data || '').toLowerCase();
       if (bodyText.includes('invalid captcha') || bodyText.includes('wrong captcha')) {
         const fresh = await this.loadCaptcha();
         return { ok: false, reason: 'wrong_captcha', fresh };
@@ -163,13 +170,19 @@ export class PortalService implements OnModuleInit {
         return { ok: false, reason: 'invalid_credentials', fresh };
       }
 
-      const updatedCookies = [...sess.cookies];
-      if (res.headers['set-cookie']) {
-        res.headers['set-cookie'].forEach((c) => updatedCookies.push(c.split(';')[0]));
-      }
-
       return { ok: true, cookies: updatedCookies, netid: cleanNetId };
-    } catch (err) {
+    } catch (err: any) {
+      if (err.response && err.response.status === 302) {
+        const setCookies = err.response.headers['set-cookie'] || [];
+        const updatedCookies = [...sess.cookies];
+        setCookies.forEach((c: string) => {
+          const cookieVal = c.split(';')[0];
+          if (!updatedCookies.includes(cookieVal)) {
+            updatedCookies.push(cookieVal);
+          }
+        });
+        return { ok: true, cookies: updatedCookies, netid: cleanNetId };
+      }
       throw new HttpException('Portal authentication failed.', HttpStatus.UNAUTHORIZED);
     }
   }
@@ -188,10 +201,10 @@ export class PortalService implements OnModuleInit {
         }),
       ]);
 
-      const profHtml = profRes.status === 'fulfilled' ? profRes.value.data.toString() : '';
-      const attHtml = attRes.status === 'fulfilled' ? attRes.value.data.toString() : '';
-      const ttHtml = ttRes.status === 'fulfilled' ? ttRes.value.data.toString() : '';
-      const calHtml = calRes.status === 'fulfilled' ? calRes.value.data.toString() : '';
+      const profHtml = profRes.status === 'fulfilled' ? String(profRes.value.data || '') : '';
+      const attHtml = attRes.status === 'fulfilled' ? String(attRes.value.data || '') : '';
+      const ttHtml = ttRes.status === 'fulfilled' ? String(ttRes.value.data || '') : '';
+      const calHtml = calRes.status === 'fulfilled' ? String(calRes.value.data || '') : '';
 
       const profile = this.parsersService.parsePortalProfile(profHtml);
       const { courses, monthly } = this.parsersService.parsePortalAttendance(attHtml);
