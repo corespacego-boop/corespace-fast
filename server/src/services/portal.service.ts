@@ -1,12 +1,30 @@
-import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, OnModuleInit } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
+import * as cheerio from 'cheerio';
 import { ParsersService } from './parsers.service';
 
+interface PrefetchedCaptcha {
+  session: string;
+  cdigest: string;
+  image: string;
+  captcha_image: string;
+  cookies: string[];
+  createdAt: number;
+}
+
 @Injectable()
-export class PortalService {
-  private sessions: Map<string, { cookies: string[]; captchaBytes?: Buffer }> = new Map();
+export class PortalService implements OnModuleInit {
+  private sessions: Map<string, { cookies: string[] }> = new Map();
+  private captchaBuffer: PrefetchedCaptcha[] = [];
+  private isRefilling = false;
+  private readonly BUFFER_SIZE = 4;
 
   constructor(private readonly parsersService: ParsersService) {}
+
+  onModuleInit() {
+    // Pre-fetch captchas in background as soon as module starts
+    this.refillCaptchaBuffer();
+  }
 
   private getClient(cookies: string[] = []): AxiosInstance {
     return axios.create({
@@ -16,22 +34,49 @@ export class PortalService {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Cookie': cookies.join('; '),
       },
-      timeout: 10000,
+      timeout: 8000,
     });
   }
 
-  // Fetch Portal Captcha Image
-  async loadCaptcha(sessionId?: string) {
-    const sid = sessionId || Math.random().toString(36).substring(2, 10);
+  // Background Refill Task to keep buffer full
+  private async refillCaptchaBuffer() {
+    if (this.isRefilling) return;
+    this.isRefilling = true;
+
+    try {
+      while (this.captchaBuffer.length < this.BUFFER_SIZE) {
+        const item = await this.fetchRawCaptcha();
+        if (item) {
+          this.captchaBuffer.push(item);
+        } else {
+          break;
+        }
+      }
+    } catch (e) {
+      // Background refill warning
+    } finally {
+      this.isRefilling = false;
+    }
+  }
+
+  // Internal Raw Fetching
+  private async fetchRawCaptcha(): Promise<PrefetchedCaptcha | null> {
+    const sid = Math.random().toString(36).substring(2, 10);
     try {
       const client = this.getClient();
-      // Load login page to get JSESSIONID
       const pageRes = await client.get('/srmiststudentportal/students/loginManager/youLogin.jsp');
       const setCookies = pageRes.headers['set-cookie'] || [];
       const cookies = setCookies.map((c) => c.split(';')[0]);
 
-      // Fetch Captcha Image
-      const captchaRes = await client.get('/srmiststudentportal/captcha.jpg', {
+      const html = pageRes.data.toString();
+      const $ = cheerio.load(html);
+      let captchaUrl = $('#secure_captcha').attr('data-src') || $('#captchaImg').attr('src') || $('img[alt="Captcha"]').attr('data-src') || $('img[alt="Captcha"]').attr('src');
+
+      if (!captchaUrl) {
+        captchaUrl = '/srmiststudentportal/SCaptchaServlet';
+      }
+
+      const captchaRes = await client.get(captchaUrl, {
         responseType: 'arraybuffer',
         headers: { Cookie: cookies.join('; ') },
       });
@@ -44,10 +89,43 @@ export class PortalService {
         cdigest: sid,
         image: base64Img,
         captcha_image: base64Img,
+        cookies,
+        createdAt: Date.now(),
       };
     } catch (err) {
-      throw new HttpException('Student Portal unavailable right now.', HttpStatus.SERVICE_UNAVAILABLE);
+      console.error('[CAPTCHA FETCH ERROR]:', err?.message || err);
+      return null;
     }
+  }
+
+  // INSTANT Captcha Delivery (pumps from memory buffer)
+  async loadCaptcha(sessionId?: string) {
+    // Evict old captchas (> 10 mins)
+    const now = Date.now();
+    this.captchaBuffer = this.captchaBuffer.filter((c) => now - c.createdAt < 600000);
+
+    let captchaItem: PrefetchedCaptcha | undefined = this.captchaBuffer.shift();
+
+    if (!captchaItem) {
+      // Fallback: load directly if buffer was empty
+      captchaItem = await this.fetchRawCaptcha();
+    }
+
+    // Trigger background refill asynchronously (non-blocking)
+    setImmediate(() => this.refillCaptchaBuffer());
+
+    if (!captchaItem) {
+      throw new HttpException('Student Portal captcha unavailable right now.', HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
+    this.sessions.set(captchaItem.session, { cookies: captchaItem.cookies });
+
+    return {
+      session: captchaItem.session,
+      cdigest: captchaItem.cdigest,
+      image: captchaItem.image,
+      captcha_image: captchaItem.captcha_image,
+    };
   }
 
   // Authenticate Portal User
