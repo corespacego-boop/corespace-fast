@@ -1,0 +1,10 @@
+{
+  "name": "corespace-root",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "build": "cd server && npm install && npm run build",
+    "start": "node server/dist/main.js",
+    "start:prod": "node server/dist/main.js"
+  }
+}
