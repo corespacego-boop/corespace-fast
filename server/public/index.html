@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CORESPACE - SRM Student Portal Engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- TOP NAVBAR -->
+  <nav class="navbar">
+    <div class="brand">
+      <div class="brand-icon">C</div>
+      <span>CORESPACE</span>
+    </div>
+
+    <div class="nav-user hidden" id="userNav">
+      <div class="user-chip">
+        <span id="userNameChip">Student</span>
+        <span class="badge-tag" id="userAccountType">Portal</span>
+      </div>
+      <button class="btn-logout" id="btnLogout">Logout</button>
+    </div>
+  </nav>
+
+  <!-- MAIN APP CONTAINER -->
+  <main class="container">
+
+    <!-- STEP 1: STUDENT PORTAL AUTH -->
+    <div class="auth-wrapper glass" id="step1Portal">
+      <div class="auth-header">
+        <h1>Student Portal Sign In</h1>
+        <p>Enter NetID, Portal Password & Captcha</p>
+      </div>
+
+      <div id="authAlertStep1" class="toast toast-danger hidden"></div>
+
+      <form id="portalForm">
+        <div class="form-group">
+          <label for="netid">NetID / Registration No.</label>
+          <input type="text" id="netid" class="form-control" placeholder="e.g. mv8182 or RA2611..." required>
+        </div>
+
+        <div class="form-group">
+          <label for="portalPassword">Portal Password</label>
+          <input type="password" id="portalPassword" class="form-control" placeholder="••••••••" required>
+        </div>
+
+        <div class="form-group">
+          <label>Portal Captcha</label>
+          <div class="captcha-box">
+            <img id="captchaImg" class="captcha-img" src="" alt="Captcha Image">
+            <button type="button" class="btn-refresh" id="btnRefreshCaptcha" title="Refresh Captcha">🔄</button>
+          </div>
+          <input type="text" id="captchaInput" class="form-control" placeholder="Enter Captcha characters" required>
+        </div>
+
+        <button type="submit" class="btn-primary" id="btnStep1Submit">
+          <span id="step1BtnText">Sign In & Check Account</span>
+        </button>
+      </form>
+    </div>
+
+    <!-- STEP 2: ACADEMIA AUTH (SHOWN ONLY IF ACADEMIA EMAIL EXISTS) -->
+    <div class="auth-wrapper glass hidden" id="step2Academia">
+      <div class="auth-header">
+        <div class="badge-tag badge-academia" style="display:inline-block; margin-bottom:0.75rem;">Academia Detected</div>
+        <h1>Academia Password Required</h1>
+        <p>Account found for <strong id="academiaEmailText" style="color:var(--accent-cyan);">email@srmist.edu.in</strong></p>
+      </div>
+
+      <div id="authAlertStep2" class="toast toast-danger hidden"></div>
+
+      <form id="academiaForm">
+        <div class="form-group">
+          <label for="academiaPassword">Academia Password</label>
+          <input type="password" id="academiaPassword" class="form-control" placeholder="Enter Academia Password" required>
+        </div>
+
+        <button type="submit" class="btn-primary" id="btnStep2Submit">
+          <span id="step2BtnText">Authenticate & Open Dashboard</span>
+        </button>
+
+        <button type="button" class="btn-refresh" id="btnSkipAcademia" style="width:100%; margin-top:0.75rem; text-align:center;">
+          Skip & View Portal Data Only
+        </button>
+      </form>
+    </div>
+
+    <!-- DASHBOARD CONTENT SECTION -->
+    <div id="dashboardSection" class="hidden">
+      
+      <!-- NAVIGATION TABS -->
+      <div class="tabs-nav glass">
+        <button class="tab-btn active" data-tab="tabProfile">👤 Personal Details</button>
+        <button class="tab-btn" data-tab="tabCourses">📚 Enrolled Courses</button>
+        <button class="tab-btn" data-tab="tabAttendance">📊 Attendance</button>
+        <button class="tab-btn" data-tab="tabMarks">📝 Internal Marks</button>
+        <button class="tab-btn" data-tab="tabTimetable">📅 Timetable</button>
+        <button class="tab-btn" data-tab="tabCalendar">🗓️ Academic Calendar</button>
+      </div>
+
+      <!-- TAB 1: PERSONAL DETAILS -->
+      <div class="tab-content active" id="tabProfile">
+        <div class="section-title">
+          <span>Personal Profile</span>
+          <span id="profileSourceBadge" class="badge-tag badge-portal">Portal Source</span>
+        </div>
+        <div class="grid-3" id="profileGrid"></div>
+      </div>
+
+      <!-- TAB 2: ENROLLED COURSES -->
+      <div class="tab-content" id="tabCourses">
+        <div class="section-title">
+          <span>Enrolled Courses</span>
+        </div>
+        <div class="glass" style="padding: 1rem;">
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Code</th>
+                  <th>Course Title</th>
+                  <th>Type</th>
+                  <th>Slot</th>
+                  <th>Room</th>
+                  <th>Credits</th>
+                  <th>Faculty</th>
+                </tr>
+              </thead>
+              <tbody id="coursesTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: ATTENDANCE SUMMARY -->
+      <div class="tab-content" id="tabAttendance">
+        <div class="section-title">
+          <span>Attendance Summary</span>
+        </div>
+        <div class="grid-2" style="margin-bottom: 2rem;" id="attendanceCardsGrid"></div>
+
+        <div class="section-title">
+          <span>Monthly Attendance Breakdown</span>
+        </div>
+        <div class="glass" style="padding: 1rem;">
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Month</th>
+                  <th>Present Days</th>
+                  <th>Absent Days</th>
+                </tr>
+              </thead>
+              <tbody id="monthlyTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 4: INTERNAL MARKS -->
+      <div class="tab-content" id="tabMarks">
+        <div class="section-title">
+          <span>Internal Marks & Component Breakdown</span>
+        </div>
+        <div class="grid-2" id="marksGrid"></div>
+      </div>
+
+      <!-- TAB 5: TIMETABLE SCHEDULE -->
+      <div class="tab-content" id="tabTimetable">
+        <div class="section-title">
+          <span>Timetable Schedule</span>
+        </div>
+        <div class="day-selector" id="daySelector">
+          <button class="day-btn active" data-day="Day 1">Day 1</button>
+          <button class="day-btn" data-day="Day 2">Day 2</button>
+          <button class="day-btn" data-day="Day 3">Day 3</button>
+          <button class="day-btn" data-day="Day 4">Day 4</button>
+          <button class="day-btn" data-day="Day 5">Day 5</button>
+        </div>
+        <div class="glass" style="padding: 1rem;">
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time Slot</th>
+                  <th>Slot Code</th>
+                  <th>Course Code</th>
+                  <th>Course Title</th>
+                  <th>Room</th>
+                </tr>
+              </thead>
+              <tbody id="timetableTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 6: ACADEMIC CALENDAR -->
+      <div class="tab-content" id="tabCalendar">
+        <div class="section-title">
+          <span>Academic Calendar</span>
+          <span class="badge-tag badge-portal" id="dayOrderTag">Today's Day Order: -</span>
+        </div>
+        <div class="glass" style="padding: 1rem;">
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Day</th>
+                  <th>Day Order</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody id="calendarTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
