@@ -1,3 +1,11 @@
+process.on('unhandledRejection', (reason) => {
+  console.warn('[Unhandled Rejection Ignored]:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[Uncaught Exception Ignored]:', err);
+});
+
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 

@@ -22,8 +22,10 @@ export class PortalService implements OnModuleInit {
   constructor(private readonly parsersService: ParsersService) {}
 
   onModuleInit() {
-    // Pre-fetch captchas in background as soon as module starts
-    this.refillCaptchaBuffer();
+    // Pre-fetch captchas in background 2s after server startup
+    setTimeout(() => {
+      this.refillCaptchaBuffer().catch(() => {});
+    }, 2000);
   }
 
   private getClient(cookies: string[] = []): AxiosInstance {
