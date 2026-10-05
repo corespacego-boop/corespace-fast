@@ -11,3 +11,5 @@ server/dist
 .env.local
 .DS_Store
 *.log
+__pycache__/
+*.pyc
