@@ -1,5 +1,8 @@
 import re
-from selectolax.parser import HTMLParser
+try:
+    from selectolax.lexbor import LexborHTMLParser as HTMLParser
+except ImportError:
+    from selectolax.parser import HTMLParser
 
 class PortalAttendanceService:
     @staticmethod
